@@ -4,11 +4,12 @@ use strict;
 use Encode;
 use LWP::Simple;
 use XML::XPath;
+use Date::Parse;
 
 my %library;
 my %abbreviations;
 
-our $maxcitation = 1;
+our $maxcitation = 0;
 
 sub new {
     my $class = shift;
@@ -88,7 +89,7 @@ sub fetchAdsabsCitations {
     }
 
     my $URL="http://adsabs.harvard.edu/cgi-bin/abs_connect?doi=$doi&data_type=XML&query_type=CITES";
-    print "Fetching citations for DOI $doi : citation level = $self->{_citationlevel}\n";
+    print "Fetching citations for DOI $doi : citation level = $self->{_citationlevel}...";
     my $result = decode_utf8(get("$URL"));
     if ($result !~ "<?xml") {
 	print "  No XML document found.\n";
@@ -178,7 +179,14 @@ sub readAdsabsRecord {
     }
     if ($xp->exists('./pubdate', $article)) {
 	($self->{_pubmonth}, $self->{_pubyear}) = 
-	    split(' ', $article->find('pubdate')->string_value);
+	    split(' ', $article->find('pubdate')->string_value);	
+	$self->{_pubmonth} = "Jan" if ($self->{_pubmonth} eq "n/a");
+
+	$self->{_pubtime} = str2time("1 $self->{_pubmonth} $self->{_pubyear}");
+    }
+
+    if ($xp->exists('./title', $article)) {
+	$self->{_title} = $article->find('title')->string_value;
     }
 
     $self->{_library}{$self->{_bibcode}} = $self;

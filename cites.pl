@@ -10,11 +10,15 @@ my $article;
 use Getopt::Long;
 Getopt::Long::Configure("bundling");
 
-my %options = ( 'build' => 1 );
+my %options = ( 'build' => 1,
+		'unflatten' => 1,
+		'sort-by-date' => 1);
 
 GetOptions(\%options,
 	   'build|b!',
-	   'file|f=s');
+	   'file|f=s',
+	   'unflatten|u!',
+	   'sort-by-date|s!');
 
 my @doilist;
 if (exists($options{'file'})) {
@@ -27,15 +31,32 @@ if (exists($options{'file'})) {
     close($doifile);
 }
 my $outdotfilename = "cites.dot";
+my $maxcitations = 0;
+my $citations;
 
 # first we fetch all the info
 foreach my $doi (@doilist) {
     $article = new Article("adsabs", $doi);
+    print "$article->{_title}\n";
+    $citations = scalar @{$article->{_citations}};
+    $maxcitations = $citations if $citations > $maxcitations;
 }
+
 
 # now we build the edges and nodes
 print "Building dot graph...\n";
-while ( ($bibcode, $article) = each %{$article->{_library}} ) {
+
+my @sortedkeys; 
+
+if ($options{'sort-by-date'}) {
+    @sortedkeys = sort {$article->{_library}{$a}->{_pubtime} <=> $article->{_library}{$b}->{_pubtime}} keys %{$article->{_library}};
+} else {
+    @sortedkeys = keys %{$article->{_library}};
+}
+
+foreach (@sortedkeys) {
+# while ( ($bibcode, $article) = each %{$article->{_library}} ) {
+    $article = $article->{_library}{$_};
     next if $article->{_notfound};
 
     my $abbr = encode("utf8",$article->getAbbreviation());
@@ -65,12 +86,18 @@ open(my $dotfile, ">$outdotfilename");
 
 print $dotfile "digraph adsabsCites {\n";
 print $dotfile "\tsplines=true\n";
-print $dotfile "\toverlap=false\n";
+print $dotfile "\tconcentrate=true\n";
 print $dotfile "\t$_\n" foreach @nodes;
 print $dotfile "\t$_\n" foreach @edges;
 print $dotfile "}\n";
 
+my $stack = int(sqrt($maxcitations));
+
 if ($options{'build'}) {
     print "Making dot graph.\n";
-    system("dot -Tpng -ocites.png $outdotfilename");
+    if ($options{'unflatten'}) {
+	system("unflatten -f -l $stack $outdotfilename | dot -Tpng -ocites.png");
+    } else {	
+	system("dot -Tpng -ocites.png $outdotfilename");
+    }
 }
