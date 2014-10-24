@@ -2,6 +2,8 @@
 use Article;
 use Encode;
 
+binmode STDOUT, ":utf8";
+
 my @edges;
 my @nodes;
 
@@ -12,10 +14,11 @@ Getopt::Long::Configure("bundling");
 
 my %options = ( 'build' => 1,
 		'unflatten' => 1,
-		'sort-by-date' => 1);
-
+		'sort-by-date' => 1,
+		'cite-level' => \$Article::maxcitation );
 GetOptions(\%options,
 	   'build|b!',
+	   'cite-level|l=i',
 	   'file|f=s',
 	   'unflatten|u!',
 	   'sort-by-date|s!');
@@ -37,11 +40,9 @@ my $citations;
 # first we fetch all the info
 foreach my $doi (@doilist) {
     $article = new Article("adsabs", $doi);
-    print "$article->{_title}\n";
     $citations = scalar @{$article->{_citations}};
     $maxcitations = $citations if $citations > $maxcitations;
 }
-
 
 # now we build the edges and nodes
 print "Building dot graph...\n";
@@ -55,7 +56,6 @@ if ($options{'sort-by-date'}) {
 }
 
 foreach (@sortedkeys) {
-# while ( ($bibcode, $article) = each %{$article->{_library}} ) {
     $article = $article->{_library}{$_};
     next if $article->{_notfound};
 
