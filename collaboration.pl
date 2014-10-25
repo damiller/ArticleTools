@@ -2,6 +2,7 @@
 use strict;
 use warnings;
 
+use Article;
 use Encode;
 use Getopt::Long;
 use Unicode::Normalize;
@@ -16,8 +17,8 @@ Getopt::Long::Configure("bundling");
 my $central_author;
 my %options = ( 'author' => \$central_author,
 		'build' => 1,
-		'print-dois' => 1,
 		'create-frequency-hashes' => 1,
+		'login' => \$Article::crossreflogin,
 		'scale' => 2.0);
 
 GetOptions(\%options, 
@@ -25,15 +26,16 @@ GetOptions(\%options,
 	   'build|b!',
 	   'create-frequency-hashes!', 
 	   'file|f=s',
+	   'login|l=s',
 	   'normalize',
 	   'print-authors!',
-	   'print-dois!',
 	   'print-edges!',
 	   'print-edges-by-node!',
 	   'print-frequency-hashes!',
 	   'print-substitutions!',
 	   'scale=f');
 
+print "Crossref login is $Article::crossreflogin\n";
 #
 #my $num_args = $#ARGV + 1;
 #if ($num_args < 2) {
@@ -55,7 +57,7 @@ if (exists($options{'file'})) {
 my $me = normalizeName($central_author);
 print "Creating graph for $me.\n";
 
-my $outdotfilename = "crossref.dot";
+my $outdotfilename = "collaboration.dot";
 open(my $dotfile, ">:encoding(UTF-8)", $outdotfilename);
 
 print $dotfile "graph crossref {\n";
@@ -69,23 +71,17 @@ my $maxfreq = 1;
 
 my @allauthors;
 my $outputName;
+my $article;
 
 foreach my $doi (@doilist) {
-    my $URL  = "http://www.crossref.org/openurl?pid=damiller\@mailaps.org&id=$doi&redirect=false";
-    print "Fetching data for DOI $doi... " if ($options{'print-dois'});
-    
-    my $result = decode_utf8(get("$URL"));
-    my $xp = XML::XPath->new(xml => $result);
+    # $article = new Article("adsabs", $doi);
+    $article = new Article("crossref", $doi);
+
     my $name;
     my @authors;
-    my @nodelist = $xp->find('//contributor')->get_nodelist;
-    print $#nodelist . " authors.\n" if ($options{'print-dois'});
 
-    foreach my $contributor ($xp->find('//contributor')->get_nodelist) {
-	$name  = $contributor->find('given_name')->string_value;
-	$name .= ' ';
-	$name .= $contributor->find('surname')->string_value; 
-	$name = normalizeName($name);
+    foreach my $contributor (@{$article->{_authors}}) {
+	$name = normalizeName($contributor);
 	$outputName = compareName($name, \@allauthors);
 
 	if ($outputName eq $name) {
@@ -266,11 +262,13 @@ sub normalizeName
     my $givenName;
     my $surname;
 
-    if ($inputName =~ /\./) {
-	($givenName, $surname) = ($inputName =~ /^(.*\.)\s(.*)$/);
-    } else {
-	($givenName, $surname) = ($inputName =~ /^(.*)\s(\S*)$/);
-    }
+#    if ($inputName =~ /\./) {
+#	($givenName, $surname) = ($inputName =~ /^(.*\.)\s(.*)$/);
+#    } else {
+#	($givenName, $surname) = ($inputName =~ /^(.*)\s(\S*)$/);
+#    }
+    ($surname, $givenName) = ($inputName =~ /^(.*),\s(.*)/);
+    
     if (!defined($givenName) || !defined($surname)) {
 	print "UNDEFINED name for $inputName\n";
 	print "Given name = $givenName\n" if (defined($givenName));

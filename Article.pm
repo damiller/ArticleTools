@@ -10,6 +10,7 @@ my %library;
 my %abbreviations;
 
 our $maxcitation = 0;
+our $crossreflogin = "";
 
 sub new {
     my $class = shift;
@@ -41,15 +42,16 @@ sub new {
 
 sub fetchCrossrefData {
     my ($self, $doi) = @_;
-    my $URL="http://www.crossref.org/openurl?pid=damiller\@mailaps.org&id=$doi&redirect=false";
+    my $URL="http://www.crossref.org/openurl?pid=$crossreflogin&id=$doi&redirect=false";
     print "Fetching data for DOI $doi\n";
     my $result = decode_utf8(get("$URL"));
     my $xp = XML::XPath->new(xml => $result);
 
     foreach my $contributor ($xp->find('//contributor')->get_nodelist) {
-	my $name = $contributor->find('given_name')->string_value;
-	$name .= ' ';
-	$name .= $contributor->find('surname')->string_value; 
+	my $name = $contributor->find('surname')->string_value; 
+	$name .= ', ';
+	$name .= $contributor->find('given_name')->string_value;
+
 	push(@{$self->{_authors}}, $name);	
     }    
 }
