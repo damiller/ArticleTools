@@ -35,6 +35,16 @@ GetOptions(\%options,
 	   'print-substitutions!',
 	   'scale=f');
 
+if ( !defined $central_author ) {
+    print "Central author not provided.\n";
+    exit 
+}
+
+if ( $Article::crossreflogin eq "" ) {
+    print "Crossref login needs to be provided.\n";
+    exit
+}
+
 print "Crossref login is $Article::crossreflogin\n";
 #
 #my $num_args = $#ARGV + 1;
@@ -52,6 +62,9 @@ if (exists($options{'file'})) {
 	push(@doilist, $_);
     }
     close($doifile);
+} else {
+    print "File not provided.\n";
+    exit
 }
 
 my $me = normalizeName($central_author);
@@ -214,6 +227,19 @@ while ((my $key, my $value) = each %edges) {
 	my ($lauth, $rauth) = split ' -- ', $key;
 	s/\"//g for $lauth,$rauth;
 	
+	if ( !defined $integratedfreq{$lauth}{$value} ) {
+	    print nice_string("Integrated freq not defined for $lauth, $value\n");
+	}
+	if ( !defined $total{$lauth} ) {
+	    print nice_string("Total not defined for $lauth\n");
+	}
+	if ( !defined $integratedfreq{$rauth}{$value} ) {
+	    print nice_string("Integrated freq not defined for $rauth, $value\n");
+	}
+	if ( !defined $total{$rauth} ) {
+	    print nice_string("Total not defined for $rauth\n");
+	}
+
 	my $l1 = sqrt($total{$lauth} - $integratedfreq{$lauth}{$value} + $frequencyhash{$lauth}{$value});
 	my $l2 = sqrt($total{$rauth} - $integratedfreq{$rauth}{$value} + $frequencyhash{$rauth}{$value});
 	# my $l1 = sqrt($total{$lauth} - $integratedfreq{$lauth}{$value} + 1);
@@ -267,8 +293,18 @@ sub normalizeName
 #    } else {
 #	($givenName, $surname) = ($inputName =~ /^(.*)\s(\S*)$/);
 #    }
-    ($surname, $givenName) = ($inputName =~ /^(.*),\s(.*)/);
-    
+    if ($inputName =~ /,/) {
+	($surname, $givenName) = ($inputName =~ /^(.*),\s(.*)/);
+    } else {
+	# deal with names with format "J. Doe" or "John Doe" instead of "Doe, J."
+	if ($inputName =~ /\./) {
+	    ($givenName, $surname) = ($inputName =~ /^(.*\.)\s(.*)/);
+	} else {
+	    # here we assume that the last name is the last word if multiple names are given
+	    ($givenName, $surname) = ($inputName =~ /^(.*)\s(.*)/);
+	}
+    }
+
     if (!defined($givenName) || !defined($surname)) {
 	print "UNDEFINED name for $inputName\n";
 	print "Given name = $givenName\n" if (defined($givenName));
@@ -309,6 +345,9 @@ sub normalizeName
 	    print "$preName => $givenName, $surname => $inputName\n";
 	}
     }
+
+    # fix any funky unicode spaces
+    $inputName =~ s/\p{Zs}/ /g;
 
     return $inputName;
 }
@@ -368,3 +407,14 @@ sub surnameFirst {
 
     return $author;
 }
+
+sub nice_string {
+    join("",
+         map { $_ > 255 ?                  # if wide character...
+		   sprintf("\\x{%04X}", $_) :  # \x{...}
+		   chr($_) =~ /[[:cntrl:]]/ ?  # else if control character ...
+		   sprintf("\\x%02X", $_) :    # \x..
+		   chr($_)                     # else as themselves
+         } unpack("U*", $_[0]));           # unpack Unicode characters
+}
+
