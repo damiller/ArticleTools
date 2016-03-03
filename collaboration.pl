@@ -8,6 +8,7 @@ use Getopt::Long;
 use Unicode::Normalize;
 use LWP::Simple;
 use XML::XPath;
+use XML::LibXML;
 use List::Util qw(max);
 
 binmode STDOUT, ':utf8';
@@ -28,6 +29,7 @@ GetOptions(\%options,
 	   'file|f=s',
 	   'login|l=s',
 	   'normalize',
+	   'orcid|o=s',
 	   'print-authors!',
 	   'print-edges!',
 	   'print-edges-by-node!',
@@ -36,8 +38,7 @@ GetOptions(\%options,
 	   'scale=f');
 
 if ( !defined $central_author ) {
-    print "Central author not provided.\n";
-    exit 
+    print "Central author not provided. Program will guess based on frequency in DOIs\n";
 }
 
 if ( $Article::crossreflogin eq "" ) {
@@ -62,13 +63,36 @@ if (exists($options{'file'})) {
 	push(@doilist, $_);
     }
     close($doifile);
-} else {
-    print "File not provided.\n";
-    exit
-}
+} 
 
-my $me = normalizeName($central_author);
-print "Creating graph for $me.\n";
+if (exists($options{'orcid'})) {
+    my $URL = "http://pub.orcid.org/$options{'orcid'}/orcid-works";
+    my $result = get("$URL");
+    
+    my $doc = XML::LibXML->new->parse_string($result);
+    my $xml = XML::LibXML::XPathContext->new;
+    $xml->registerNs('x','http://www.orcid.org/ns/orcid');
+
+    my $count = 0;
+    foreach my $work ($xml->findnodes('//x:orcid-work', $doc)) {
+	my $title = $xml->findnodes('./x:work-title/x:title', $work);
+	foreach my $ids ($xml->findnodes('.//x:work-external-identifier', $work)) {
+	    my $type = $xml->findnodes('./x:work-external-identifier-type', $ids);
+	    my $id = $xml->findnodes('./x:work-external-identifier-id', $ids);
+	    if ($type eq "doi") {
+		$count++;
+		push(@doilist, $id);
+	    }
+	}     
+    }
+    
+    print "$count DOIs grabbed from ORCID\n";
+}
+   
+if (scalar @doilist == 0) {
+    print "No DOIs found.\n";
+    exit;
+}
 
 my $outdotfilename = "collaboration.dot";
 open(my $dotfile, ">:encoding(UTF-8)", $outdotfilename);
@@ -83,6 +107,7 @@ my %substitutions = ();
 my $maxfreq = 1;
 
 my @allauthors;
+my %testauthors;
 my $outputName;
 my $article;
 
@@ -99,6 +124,7 @@ foreach my $doi (@doilist) {
 
 	if ($outputName eq $name) {
 	    push (@allauthors, $name);
+	    $testauthors{"$name"} = 0;
 	} elsif ($outputName ne "") {
 	    # name is similar to another name
 	    # use NFKD length to prefer accents if they are missing in the database
@@ -126,6 +152,7 @@ foreach my $doi (@doilist) {
 		    }
 		}
 		# adjust it in the authors list
+		$testauthors{"$name"} = delete $testauthors{"$outputName"};
 		s/$outputName/$name/ for @allauthors;
 	    }
 	}
@@ -135,6 +162,7 @@ foreach my $doi (@doilist) {
 	    }
 	    $name = $substitutions{"$name"};
 	}
+	$testauthors{"$name"}++;
 	push(@authors, $name);	
     } 
 
@@ -153,6 +181,20 @@ foreach my $doi (@doilist) {
 	}
     }
 }
+
+my $max_key;
+my $max_value = 0;
+while ((my $key, my $value) = each %testauthors) {
+    if ($value > $max_value) {
+	$max_key = $key;
+	$max_value = $value;
+    }
+}
+
+$central_author = $max_key if (!defined $central_author); 
+
+$central_author = normalizeName($central_author);
+print "Creating graph for $central_author.\n";
 
 if ($options{'print-substitutions'}) {
     print "Substitutions:\n";
@@ -186,27 +228,27 @@ if ($options{'create-frequency-hashes'}) {
     my $max;
 
     foreach my $author (@sortedauthors) {
-	if ($options{'print-frequency-hashes'} || $author =~ $me) {
+	if ($options{'print-frequency-hashes'} || $author =~ $central_author) {
 	    print "Frequency map for $author:\n"; 
 	}
 	my @sortedkeysauthor = sort { $a <=> $b } keys %{ $frequencyhash{$author} };
 	$total{$author} = 0;
 	foreach my $key ( sort { $a <=> $b } @sortedkeysauthor ) {
 	    $max = $key;
-	    if ($options{'print-frequency-hashes'} || $author =~ $me) {
+	    if ($options{'print-frequency-hashes'} || $author =~ $central_author) {
 		print "  $key => $frequencyhash{$author}{$key}\n";
 	    }
 	    $total{$author} += $frequencyhash{$author}{$key}; 	 
 	    $integratedfreq{$author}{$key} = $total{$author};
 	}
     }
-    print "  Total: $total{$me}\n";
+    print "  Total: $total{$central_author}\n";
     
     open (my $freqfile, ">frequency.dat");
     if ($options{'normalize'}) {
-	printf $freqfile "%2d %f\n", $_, exists($frequencyhash{$me}{$_}) ? $frequencyhash{$me}{$_}/$total{$me} : 0 for (1..$max);
+	printf $freqfile "%2d %f\n", $_, exists($frequencyhash{$central_author}{$_}) ? $frequencyhash{$central_author}{$_}/$total{$central_author} : 0 for (1..$max);
     } else { 
-	printf $freqfile "%2d %d\n", $_, exists($frequencyhash{$me}{$_}) ? $frequencyhash{$me}{$_}             : 0 for (1..$max);
+	printf $freqfile "%2d %d\n", $_, exists($frequencyhash{$central_author}{$_}) ? $frequencyhash{$central_author}{$_}             : 0 for (1..$max);
     }
     close($freqfile);
 }
@@ -228,16 +270,16 @@ while ((my $key, my $value) = each %edges) {
 	s/\"//g for $lauth,$rauth;
 	
 	if ( !defined $integratedfreq{$lauth}{$value} ) {
-	    print nice_string("Integrated freq not defined for $lauth, $value\n");
+	    print nice_string("Integrated freq not defined for $lauth, $value") . "\n";
 	}
 	if ( !defined $total{$lauth} ) {
-	    print nice_string("Total not defined for $lauth\n");
+	    print nice_string("Total not defined for $lauth") . "\n";
 	}
 	if ( !defined $integratedfreq{$rauth}{$value} ) {
-	    print nice_string("Integrated freq not defined for $rauth, $value\n");
+	    print nice_string("Integrated freq not defined for $rauth, $value") . "\n";
 	}
 	if ( !defined $total{$rauth} ) {
-	    print nice_string("Total not defined for $rauth\n");
+	    print nice_string("Total not defined for $rauth") . "\n";
 	}
 
 	my $l1 = sqrt($total{$lauth} - $integratedfreq{$lauth}{$value} + $frequencyhash{$lauth}{$value});
@@ -249,7 +291,7 @@ while ((my $key, my $value) = each %edges) {
     } else {
 	$length = $options{'scale'} * sqrt(1 + $maxfreq - $value);
     }
-    if ($key =~ $me) {
+    if ($key =~ $central_author) {
 	printf $dotfile "\t$key [len=%.2f penwidth=%.2f color=\"#0000ff\" w=100.0]\n", $length, sqrt($value);
     } else {
 	printf $dotfile "\t$key [len=%.2f style=dashed w=1.0]\n", $length;
@@ -259,13 +301,13 @@ while ((my $key, my $value) = each %edges) {
 
 print $dotfile "}\n";
 
-$edges{qq("$me" -- "$me")} = 0;
+$edges{qq("$central_author" -- "$central_author")} = 0;
 
-@sortedauthors = sort {$edges{$me le $a ? qq("$me" -- "$a") : qq("$a" -- "$me")} <=> $edges{$me le $b ? qq("$me" -- "$b") : qq("$b" -- "$me")}} @allauthors;
+@sortedauthors = sort {$edges{$central_author le $a ? qq("$central_author" -- "$a") : qq("$a" -- "$central_author")} <=> $edges{$central_author le $b ? qq("$central_author" -- "$b") : qq("$b" -- "$central_author")}} @allauthors;
 
 if ($options{'print-authors'}) {
     print "Authors:\n";
-    print join("\n", map {surnameFirst($_) . ' (' . ($_ eq $me ? "0" : $edges{$me le $_ ? qq("$me" -- "$_") : qq("$_" -- "$me")}) . ')' } @sortedauthors ) . "\n";
+    print join("\n", map {surnameFirst($_) . ' (' . ($_ eq $central_author ? "0" : $edges{$central_author le $_ ? qq("$central_author" -- "$_") : qq("$_" -- "$central_author")}) . ')' } @sortedauthors ) . "\n";
 }
 
 if ($options{'build'}) {
