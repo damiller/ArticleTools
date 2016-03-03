@@ -27,6 +27,7 @@ GetOptions(\%options,
 	   'build|b!',
 	   'create-frequency-hashes!', 
 	   'file|f=s',
+	   'help|h',
 	   'login|l=s',
 	   'normalize',
 	   'orcid|o=s',
@@ -36,6 +37,31 @@ GetOptions(\%options,
 	   'print-frequency-hashes!',
 	   'print-substitutions!',
 	   'scale=f');
+
+if ( exists($options{'help'}) ) {
+    print <<'USAGE_END';
+usage: collaboration.pl [options]
+  -a, --author                provide name for central author
+  -b, --build                 build the collaboration figure (on by default), dot file is still created
+  --create-frequency-hashes   base the optimal lengths based on the data from the number of edges with certain weights for each author (on by default),
+                                otherwise lengths are solely based relative to the maximum weight edge which has optimal length 1
+  -f, --file                  look up DOIs listed one per line in a text file
+  -h, --help                  display this usage information
+  -l, --login                 login necessary to pull data from CrossRef
+  --normalize                 normalize output frequency.dat based on total number of coauthors of the central author
+  -o, --orcid                 look up DOIs as listed for a particular ORCID profile
+  --print-authors             print a list of all authors and number of connections to central authors
+  --print-edges               print a list of all edges with their weights
+  --print-edges-by-node       print a list of all edges sorted for each author with their weights
+  --print-frequency-hashes    print the frequency hashes calculated which determine the optimal lengths for each author
+  --print-substitutions       print the author substitutions which the program determined
+  --scale                     Multiply optimal lengths by a constant (default = 2.0)
+
+  All print options, create frequency hashes, and build switches can be negated, i.e. --nobuild will not build the collaboration figure.
+USAGE_END
+
+    exit;
+}
 
 if ( !defined $central_author ) {
     print "Central author not provided. Program will guess based on frequency in DOIs\n";
