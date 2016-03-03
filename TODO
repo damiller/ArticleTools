@@ -1,0 +1,8 @@
+Change collaboration script to allow it to use Harvard AdsAbs service.
+Refactor collaboration code so it isn't just one huge main function.
+Animated GIF feature to track the change chronologically
+Method which can explicitly define (or omit) certain substitutions.
+Do something with available institution information.
+Further explore ORCID functionalities.
+Investigate behaviour with no central author and/or multiple files/ORCIDs.
+Work on GIFs with maps to test links for cites script
