@@ -136,7 +136,7 @@ foreach my $doi (@doilist) {
 		if ($options{'print-substitutions'}) {
 		    print "Replacing previous edges with $outputName => $name\n";
 		}
-		while ((my $key, my $value) = each %edges) {
+		foreach my $key (keys %edges) {
 		    if ($key =~ /$outputName/) {
 			my ($lauth, $rauth) = split ' -- ', $key;
 			s/\"//g for $lauth,$rauth;
@@ -147,8 +147,7 @@ foreach my $doi (@doilist) {
 			if ($options{'print-substitutions'} && $newkey !~ $key ) {
 			    print "$key => $newkey\n";
 			}
-			$edges{"$newkey"} = $value;
-			delete($edges{$key});
+			$edges{"$newkey"} = delete($edges{$key});
 		    }
 		}
 		# adjust it in the authors list
