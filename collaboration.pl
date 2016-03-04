@@ -15,8 +15,8 @@ binmode STDOUT, ':utf8';
 
 Getopt::Long::Configure("bundling");
 
-my $central_author;
-my %options = ( 'author' => \$central_author,
+my $centralAuthor;
+my %options = ( 'author' => \$centralAuthor,
 		'build' => 1,
 		'create-frequency-hashes' => 1,
 		'login' => \$Article::crossreflogin,
@@ -63,7 +63,7 @@ USAGE_END
     exit;
 }
 
-if ( !defined $central_author ) {
+if ( !defined $centralAuthor ) {
     print "Central author not provided. Program will guess based on frequency in DOIs\n";
 }
 
@@ -132,10 +132,12 @@ my %edges = ();
 my %substitutions = ();
 my $maxfreq = 1;
 
-my @allauthors;
-my %testauthors;
+my %authorFrequencies;
+my $mostFrequentAuthor;
+my $highestFrequency = 0;
 my $outputName;
 my $article;
+
 
 foreach my $doi (@doilist) {
     # $article = new Article("adsabs", $doi);
@@ -146,11 +148,10 @@ foreach my $doi (@doilist) {
 
     foreach my $contributor (@{$article->{_authors}}) {
 	$name = normalizeName($contributor);
-	$outputName = compareName($name, \@allauthors);
+	$outputName = compareName($name, \%authorFrequencies);
 
 	if ($outputName eq $name) {
-	    push (@allauthors, $name);
-	    $testauthors{"$name"} = 0;
+	    $authorFrequencies{"$name"} = 0;
 	} elsif ($outputName ne "") {
 	    # name is similar to another name
 	    # use NFKD length to prefer accents if they are missing in the database
@@ -177,8 +178,7 @@ foreach my $doi (@doilist) {
 		    }
 		}
 		# adjust it in the authors list
-		$testauthors{"$name"} = delete $testauthors{"$outputName"};
-		s/$outputName/$name/ for @allauthors;
+		$authorFrequencies{"$name"} = delete $authorFrequencies{"$outputName"};
 	    }
 	}
 	if (defined($substitutions{"$name"})) {
@@ -187,7 +187,11 @@ foreach my $doi (@doilist) {
 	    }
 	    $name = $substitutions{"$name"};
 	}
-	$testauthors{"$name"}++;
+	my $newFrequency = $authorFrequencies{"$name"}++;
+	if ($newFrequency > $highestFrequency) {
+	    $highestFrequency = $newFrequency;
+	    $mostFrequentAuthor = $name;
+	}
 	push(@authors, $name);	
     } 
 
@@ -207,19 +211,10 @@ foreach my $doi (@doilist) {
     }
 }
 
-my $max_key;
-my $max_value = 0;
-while ((my $key, my $value) = each %testauthors) {
-    if ($value > $max_value) {
-	$max_key = $key;
-	$max_value = $value;
-    }
-}
+$centralAuthor = $mostFrequentAuthor if (!defined $centralAuthor); 
 
-$central_author = $max_key if (!defined $central_author); 
-
-$central_author = normalizeName($central_author);
-print "Creating graph for $central_author.\n";
+$centralAuthor = normalizeName($centralAuthor);
+print "Creating graph for $centralAuthor.\n";
 
 if ($options{'print-substitutions'}) {
     print "Substitutions:\n";
@@ -227,7 +222,7 @@ if ($options{'print-substitutions'}) {
 }
 
 my @sortedkeys = sort {$edges{$a} <=> $edges{$b} } keys %edges;
-my @sortedauthors = sort {uc(surnameFirst($a)) cmp uc(surnameFirst($b))} @allauthors;
+my @sortedauthors = sort {uc(surnameFirst($a)) cmp uc(surnameFirst($b))} keys %authorFrequencies;
 
 if ($options{'print-edges'}) {
 #    foreach my $key (@sortedkeys) {
@@ -253,27 +248,27 @@ if ($options{'create-frequency-hashes'}) {
     my $max;
 
     foreach my $author (@sortedauthors) {
-	if ($options{'print-frequency-hashes'} || $author =~ $central_author) {
+	if ($options{'print-frequency-hashes'} || $author =~ $centralAuthor) {
 	    print "Frequency map for $author:\n"; 
 	}
 	my @sortedkeysauthor = sort { $a <=> $b } keys %{ $frequencyhash{$author} };
 	$total{$author} = 0;
 	foreach my $key ( sort { $a <=> $b } @sortedkeysauthor ) {
 	    $max = $key;
-	    if ($options{'print-frequency-hashes'} || $author =~ $central_author) {
+	    if ($options{'print-frequency-hashes'} || $author =~ $centralAuthor) {
 		print "  $key => $frequencyhash{$author}{$key}\n";
 	    }
 	    $total{$author} += $frequencyhash{$author}{$key}; 	 
 	    $integratedfreq{$author}{$key} = $total{$author};
 	}
     }
-    print "  Total: $total{$central_author}\n";
+    print "  Total: $total{$centralAuthor}\n";
     
     open (my $freqfile, ">frequency.dat");
     if ($options{'normalize'}) {
-	printf $freqfile "%2d %f\n", $_, exists($frequencyhash{$central_author}{$_}) ? $frequencyhash{$central_author}{$_}/$total{$central_author} : 0 for (1..$max);
+	printf $freqfile "%2d %f\n", $_, exists($frequencyhash{$centralAuthor}{$_}) ? $frequencyhash{$centralAuthor}{$_}/$total{$centralAuthor} : 0 for (1..$max);
     } else { 
-	printf $freqfile "%2d %d\n", $_, exists($frequencyhash{$central_author}{$_}) ? $frequencyhash{$central_author}{$_}             : 0 for (1..$max);
+	printf $freqfile "%2d %d\n", $_, exists($frequencyhash{$centralAuthor}{$_}) ? $frequencyhash{$centralAuthor}{$_}             : 0 for (1..$max);
     }
     close($freqfile);
 }
@@ -316,7 +311,7 @@ while ((my $key, my $value) = each %edges) {
     } else {
 	$length = $options{'scale'} * sqrt(1 + $maxfreq - $value);
     }
-    if ($key =~ $central_author) {
+    if ($key =~ $centralAuthor) {
 	printf $dotfile "\t$key [len=%.2f penwidth=%.2f color=\"#0000ff\" w=100.0]\n", $length, sqrt($value);
     } else {
 	printf $dotfile "\t$key [len=%.2f style=dashed w=1.0]\n", $length;
@@ -326,13 +321,13 @@ while ((my $key, my $value) = each %edges) {
 
 print $dotfile "}\n";
 
-$edges{qq("$central_author" -- "$central_author")} = 0;
+$edges{qq("$centralAuthor" -- "$centralAuthor")} = 0;
 
-@sortedauthors = sort {$edges{$central_author le $a ? qq("$central_author" -- "$a") : qq("$a" -- "$central_author")} <=> $edges{$central_author le $b ? qq("$central_author" -- "$b") : qq("$b" -- "$central_author")}} @allauthors;
+@sortedauthors = sort {$edges{$centralAuthor le $a ? qq("$centralAuthor" -- "$a") : qq("$a" -- "$centralAuthor")} <=> $edges{$centralAuthor le $b ? qq("$centralAuthor" -- "$b") : qq("$b" -- "$centralAuthor")}} keys %authorFrequencies;
 
 if ($options{'print-authors'}) {
     print "Authors:\n";
-    print join("\n", map {surnameFirst($_) . ' (' . ($_ eq $central_author ? "0" : $edges{$central_author le $_ ? qq("$central_author" -- "$_") : qq("$_" -- "$central_author")}) . ')' } @sortedauthors ) . "\n";
+    print join("\n", map {surnameFirst($_) . ' (' . ($_ eq $centralAuthor ? "0" : $edges{$centralAuthor le $_ ? qq("$centralAuthor" -- "$_") : qq("$_" -- "$centralAuthor")}) . ')' } @sortedauthors ) . "\n";
 }
 
 if ($options{'build'}) {
@@ -424,13 +419,13 @@ sub compareName
     my $name1 = shift;
     my $outputName = $name1;
     my $ref = shift;
-    my @nameList = @{$ref};
+    my %nameList = %{$ref};
     my $testname1 = "";
     my $testname2 = "";
 
-    return $outputName if scalar @nameList == 0;
+    return $outputName if scalar keys %nameList == 0;
 
-    foreach my $name2 (@nameList) {
+    foreach my $name2 (keys %nameList) {
 	if ($name1 eq $name2) {
 	    $outputName = "";
 	    next;
